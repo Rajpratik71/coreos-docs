@@ -32,7 +32,7 @@ systemd:
 
 Docker containers can be very large and debugging a build process makes it easy to accumulate hundreds of containers. It's advantageous to use attached storage to expand your capacity for container images. Be aware that some cloud providers treat certain disks as ephemeral and you will lose all Docker images contained on that disk.
 
-We're going to format a device as ext4 and then mount it to `/var/lib/docker`, where Docker stores images. Be sure to hardcode the correct device or look for a device by label:
+We're going to mount a ext4 device to `/var/lib/docker`, where Docker stores images. We can do this on the fly when the machines starts up with a "oneshot" unit that formats the drive and another one that runs afterwards to mount it. To ensure our disk only gets formatted once, the unit will only run if the file `/var/lib/format-xvdb` isn't present. Upon successful formatting, we'll write out that file in an `ExecStopPost=` command.
 
 ```yaml container-linux-config
 storage:
@@ -44,6 +44,27 @@ storage:
         wipe_filesystem: true
 systemd:
   units:
+
+Be sure to hardcode the correct device or look for a device by label:
+
+```yaml
+#cloud-config
+coreos:
+  units:
+    - name: format-ephemeral.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the ephemeral drive
+        After=dev-xvdb.device
+        Requires=dev-xvdb.device
+        ConditionPathExists=!/var/lib/format-xvdb
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/xvdb
+        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/xvdb
+        ExecStartPost=/usr/bin/touch /var/lib/format-xvdb
     - name: var-lib-docker.mount
       enable: true
       contents: |
